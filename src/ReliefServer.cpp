@@ -41,16 +41,14 @@ void gesturalReliefApp::setup(){
 		for (int y = 0; y < RELIEF_SIZE_Y; y++) {
 			mPinHeightToRelief[x][y] = 100;
 			mPinHeightToRelief[x][y] = 50; //use this starting value for a safe reset
-			
+			loadTarget[x][y] = mPinHeightToRelief[x][y];
 		}
 	}
-    loadTarget = reliefatov(mPinHeightToRelief);
 	startLoading();
+    startTime = ofGetElapsedTimef();
     //Network setup
     
-    constantUpdate = true;
-    //next_client_in_port = ADD_CLIENT_PORT+20;
-    //client_receiver.setup(ADD_CLIENT_PORT);   
+    constantUpdate = true;  
     receiver.setup(LISTEN_PORT);
 }
 
@@ -58,24 +56,30 @@ void gesturalReliefApp::setup(){
 void gesturalReliefApp::update(){
 
 		
-	/*****************
-	 * State machine *
-	 *****************/
+
 	updateFromReliefHeight();	
-		
-	
-	/*****************
-	 * Relief update *
-	 *****************/
-	if(loading) {
-		processLoading();
-	} else {
-		loadTarget = reliefatov(mPinHeightToRelief);
-	}	
-	
-	if(RELIEF_CONNECTED){
-		mIOManager->sendPinHeightToRelief(mPinHeightToRelief);
-	}
+   
+    if(loading) {
+        processLoading();
+    } else {
+        for (int x = 0; x < RELIEF_SIZE_X; x++) {
+            for (int y = 0; y < RELIEF_SIZE_Y; y++) {
+                loadTarget[x][y] = mPinHeightToRelief[x][y];
+            }
+        }
+    }
+    if(ofGetElapsedTimef() - startTime < 3) {
+        for (int x = 0; x < RELIEF_SIZE_X; x++) {
+            for (int y = 0; y < RELIEF_SIZE_Y; y++) {
+                mPinHeightToRelief[x][y] = ofMap(ofGetElapsedTimef() - startTime, 1, 3, 25, RELIEF_FLOOR,1);
+                loadTarget[x][y] = mPinHeightToRelief[x][y];
+            }
+        }
+    }
+    
+    if(RELIEF_CONNECTED){
+        mIOManager->sendPinHeightToRelief(mPinHeightToRelief);
+    }
     
     processMessages();
     if (constantUpdate)
@@ -121,7 +125,15 @@ void gesturalReliefApp::updateFromReliefHeight() {
 //--------------------------------------------------------------
 void gesturalReliefApp::keyPressed(int key) {
 	switch (key) {
-		
+        case 'r':
+            for(int x = 0; x < RELIEF_SIZE_X; x++) {
+                for(int y = 0; y < RELIEF_SIZE_Y;y++) {
+                    loadTarget[x][y] = RELIEF_FLOOR;
+                }
+            }
+            printf("Reset pins to floor\n");
+            startLoading();
+            break; 
 	}
 }
 
@@ -236,14 +248,13 @@ void gesturalReliefApp::processMessages() {
             if(m.getNumArgs() != RELIEF_SIZE_X*RELIEF_SIZE_Y) {
                 printf("Incorrect number of arguments for /relief/set\n");
             } else {
-                unsigned char relief[RELIEF_SIZE_X][RELIEF_SIZE_Y];
                 for(int x = 0; x < RELIEF_SIZE_X; x++) {
                     for(int y = 0; y < RELIEF_SIZE_Y; y++) {
-                        relief[x][y] = ofMap(m.getArgAsInt32(x*RELIEF_SIZE_Y+y),0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
-                        mPinHeightToRelief[x][y] = relief[x][y];
+                        unsigned char val = ofMap(m.getArgAsInt32(x*RELIEF_SIZE_Y+y),0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
+                        mPinHeightToRelief[x][y] = val;
+                        loadTarget[x][y] = val;
                     }
                 }
-                loadTarget = reliefatov(relief);
                 startLoading();
             }
         }
@@ -259,14 +270,20 @@ void gesturalReliefApp::processMessages() {
             if(m.getNumArgs() != RELIEF_SIZE_X*RELIEF_SIZE_Y) {
                 printf("Incorrect number of arguments for /relief/set\n");
             } else {
-                unsigned char relief[RELIEF_SIZE_X][RELIEF_SIZE_Y];
                 for(int x = 0; x < RELIEF_SIZE_X; x++) {
                     for(int y = 0; y < RELIEF_SIZE_Y; y++) {
-                        relief[x][y] = ofMap(m.getArgAsInt32(x*RELIEF_SIZE_Y+y),0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
+                        loadTarget[x][y] = ofMap(m.getArgAsInt32(x*RELIEF_SIZE_Y+y),0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
                     }
-                }                   
-                loadTarget = reliefatov(relief);
+                }
                 startLoading();
+            }
+        }
+        if(m.getAddress() == "/relief/disconnect") {
+            for(int i = 0; i < clients.size();i++) {
+                if(clients[i].ip == m.getRemoteIp()) {
+                    clients.erase(clients.begin()+i);
+                    i--;
+                }
             }
         }
     }
@@ -287,7 +304,6 @@ void gesturalReliefApp::updateClientsFromHeight() {
     for(int i = 0; i < clients.size(); i++) {
         ofxOscMessage m;
         m.setAddress("/relief/update");
-        frame &relief = loadTarget;
         for (int x = 0; x < RELIEF_SIZE_X; x++) { 
             for (int y = 0; y < RELIEF_SIZE_Y; y++) {
                 m.addIntArg(ofMap(mPinHeightFromRelief[x][y],RELIEF_FLOOR,RELIEF_CEIL,0,100,1));

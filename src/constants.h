@@ -34,7 +34,7 @@
 
 // Matthew Vertical Screen Settings
 #define SCREEN_WIDTH  800
-#define SCREEN_HEIGHT 800
+#define SCREEN_HEIGHT 400
 
 
 #define FPS 60

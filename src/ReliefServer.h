@@ -30,7 +30,7 @@ class gesturalReliefApp : public ofBaseApp{
 		unsigned char mPinHeightToRelief [RELIEF_SIZE_X][RELIEF_SIZE_Y];
 		unsigned char mPinMask[RELIEF_SIZE_X][RELIEF_SIZE_Y];
 
-        frame loadTarget;
+        float loadTarget[RELIEF_SIZE_X][RELIEF_SIZE_Y];
 		
 		void updateFromReliefHeight();
 		void reliefvtoa(frame, unsigned char arr[RELIEF_SIZE_X][RELIEF_SIZE_Y]);
@@ -41,7 +41,8 @@ class gesturalReliefApp : public ofBaseApp{
 	
 		bool loading;
 		int adjust_frame;
-		int frames_loading;    
+		int frames_loading;   
+        float startTime;
 	
 		bool constantUpdate;
     
