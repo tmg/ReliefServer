@@ -8,7 +8,7 @@
 class gesturalReliefApp : public ofBaseApp{
 
 	public:
-	
+        ~gesturalReliefApp();
 		typedef vector<vector< unsigned char> > frame;
 		
     
@@ -47,21 +47,38 @@ class gesturalReliefApp : public ofBaseApp{
 		bool constantUpdate;
     
         //Networking
-        struct Client {
+        /*struct Client {
             ofxOscSender   sender;
             string         ip;
             int            out_port;
+            float          lastPing;
             
             void setup(string out_ip, int outport) {
                 out_port = outport;
                 sender.setup(out_ip,out_port);
                 ip = out_ip;
+                lastPing = ofGetElapsedTimef();
+            }
+        };*/
+    
+        struct Client {
+            ofxOscSender   sender;
+            string         ip;
+            int            out_port;
+            float          lastPing;
+            
+            Client(string out_ip, int outport) {
+                out_port = outport;                
+                sender.setup(out_ip,out_port);
+                ip = out_ip;
+                lastPing = ofGetElapsedTimef();
             }
         };
-        vector<Client> clients;
+        vector<Client*> clients;
         ofxOscReceiver receiver;
         void addClient(string ip, int port);
         void processMessages();
         void updateClientsFromHeight();
+        void checkDisconnects();
 };
 

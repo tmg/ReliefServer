@@ -1,6 +1,11 @@
 #include "ReliefServer.h"
 
 //--------------------------------------------------------------
+gesturalReliefApp::~gesturalReliefApp() {
+    for(int i = 0 ; i < clients.size();i++) {
+        delete clients[i];
+    }
+}
 void gesturalReliefApp::setup(){
 	
 	/*****************
@@ -48,7 +53,7 @@ void gesturalReliefApp::setup(){
     startTime = ofGetElapsedTimef();
     //Network setup
     
-    constantUpdate = true;  
+    constantUpdate = false;  
     receiver.setup(LISTEN_PORT);
 }
 
@@ -68,6 +73,8 @@ void gesturalReliefApp::update(){
             }
         }
     }
+    
+    //Safe Loading
     if(ofGetElapsedTimef() - startTime < 3) {
         for (int x = 0; x < RELIEF_SIZE_X; x++) {
             for (int y = 0; y < RELIEF_SIZE_Y; y++) {
@@ -82,8 +89,10 @@ void gesturalReliefApp::update(){
     }
     
     processMessages();
-    if (constantUpdate)
+    checkDisconnects();
+    if (constantUpdate) {
         updateClientsFromHeight();
+    }
 }
 
 //--------------------------------------------------------------
@@ -106,7 +115,7 @@ void gesturalReliefApp::draw() {
     ofDrawBitmapString(reportStr, 20, text_position);
 	for(int i = 0; i< clients.size(); i++) {
         text_position += 20;
-        sprintf(reportStr," - Sending to %s:%d",clients[i].ip.c_str(),clients[i].out_port);
+        sprintf(reportStr," - Sending to %s:%d",clients[i]->ip.c_str(),clients[i]->out_port);
         ofDrawBitmapString(reportStr, 20, text_position);
     }
 }
@@ -212,25 +221,20 @@ void gesturalReliefApp::startLoading() {
 void gesturalReliefApp::addClient(string ip, int port) {
     bool add = true;
     for(int i = 0; i < clients.size(); i++) {
-        if(ip.compare(clients[i].ip) == 0) {
+        if(ip == clients[i]->ip) {
             add = false;
         }
     }
     if(add) {
-        Client client;
-        clients.push_back(client);
-        int inst = (int)clients.size()-1;
-        clients[inst].setup(ip,port);
-        
+        clients.push_back(new Client(ip,port));
         //Send reply message
         ofxOscMessage m;
         m.setAddress("/relief/connect/reply");
         //m.addIntArg(next_client_in_port);
-		clients[inst].sender.sendMessage(m);
+        int inst = clients.size() -1;
+		clients[inst]->sender.sendMessage(m);
         
-        printf("Client: Sending-%s, %d\n",ip.c_str(),port);
-    } else {
-        printf("Attempted connection from %s, but they are already connected.\n",ip.c_str());
+        printf("Add Client: Sending-%s, %d\n",ip.c_str(),port);
     }
 }
 
@@ -243,6 +247,14 @@ void gesturalReliefApp::processMessages() {
             int port = m.getArgAsInt32(0);
             addClient(ip, port);
             updateClientsFromHeight();
+        }
+        if(m.getAddress() == "/relief/heartbeat") {
+            if (m.getNumArgs() == 1) {
+                string ip = m.getRemoteIp();
+                int port = m.getArgAsInt32(0);
+                addClient(ip, port);
+                updateClientsFromHeight();
+            }
         }
         if(m.getAddress() == "/relief/set") {
             if(m.getNumArgs() != RELIEF_SIZE_X*RELIEF_SIZE_Y) {
@@ -280,25 +292,31 @@ void gesturalReliefApp::processMessages() {
         }
         if(m.getAddress() == "/relief/disconnect") {
             for(int i = 0; i < clients.size();i++) {
-                if(clients[i].ip == m.getRemoteIp()) {
+                if(clients[i]->ip == m.getRemoteIp()) {
                     clients.erase(clients.begin()+i);
                     i--;
                 }
+            }
+        }
+        for(int i = 0; i < clients.size(); i++) {
+            if(clients[i]->ip == m.getRemoteIp()) {
+                clients[i]->lastPing = ofGetElapsedTimef();
             }
         }
     }
 
 }
 
-/*void gesturalReliefApp::checkDisconnects() {
+void gesturalReliefApp::checkDisconnects() {
     float time = ofGetElapsedTimef();
     for(int i = 0; i < clients.size(); i++) {
-        if(time > clients[i].lastPing +3.f) {
+        if(time > clients[i]->lastPing +3.f) {
             clients.erase(clients.begin()+i);
             i--;
         }
     }
-}*/
+}
+
 
 void gesturalReliefApp::updateClientsFromHeight() {
     for(int i = 0; i < clients.size(); i++) {
@@ -309,7 +327,7 @@ void gesturalReliefApp::updateClientsFromHeight() {
                 m.addIntArg(ofMap(mPinHeightFromRelief[x][y],RELIEF_FLOOR,RELIEF_CEIL,0,100,1));
             }
         }
-        clients[i].sender.sendMessage(m);
+        clients[i]->sender.sendMessage(m);
     }
 }
 
