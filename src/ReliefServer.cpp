@@ -53,20 +53,20 @@ void gesturalReliefApp::setup(){
     startTime = ofGetElapsedTimef();
     //Network setup
     
-    constantUpdate = false;  
+    constantUpdate = true;  
     receiver.setup(LISTEN_PORT);
+    
+    loadSpeed = 3.f; //Default speed for the loading process
 }
 
 //--------------------------------------------------------------
 void gesturalReliefApp::update(){
-
-		
-
-	updateFromReliefHeight();	
+	updateFromReliefHeight(); //Updates the height from the table and adjusts for direct manipulation
    
     if(loading) {
         processLoading();
     } else {
+        //If not loading, have the target state follow the direct manipulation
         for (int x = 0; x < RELIEF_SIZE_X; x++) {
             for (int y = 0; y < RELIEF_SIZE_Y; y++) {
                 loadTarget[x][y] = mPinHeightToRelief[x][y];
@@ -74,18 +74,25 @@ void gesturalReliefApp::update(){
         }
     }
     
-    //Safe Loading
+    //This resets the pins to the floor over time so they don't slam down
     if(ofGetElapsedTimef() - startTime < 3) {
         for (int x = 0; x < RELIEF_SIZE_X; x++) {
             for (int y = 0; y < RELIEF_SIZE_Y; y++) {
-                mPinHeightToRelief[x][y] = ofMap(ofGetElapsedTimef() - startTime, 1, 3, 25, RELIEF_FLOOR,1);
+                mPinHeightToRelief[x][y] = ofMap(ofGetElapsedTimef() - startTime, 1, 3, 50, RELIEF_FLOOR,1);
                 loadTarget[x][y] = mPinHeightToRelief[x][y];
             }
         }
     }
     
+    //send the height to the relief
     if(RELIEF_CONNECTED){
-        mIOManager->sendPinHeightToRelief(mPinHeightToRelief);
+        unsigned char relief[RELIEF_SIZE_X][RELIEF_SIZE_Y];
+        for (int x = 0; x < RELIEF_SIZE_X; x++) {
+            for (int y = 0; y < RELIEF_SIZE_Y; y++) {
+                relief[x][y] = (unsigned char)mPinHeightToRelief[x][y];
+            }
+        }
+        mIOManager->sendPinHeightToRelief(relief);
     }
     
     processMessages();
@@ -125,8 +132,8 @@ void gesturalReliefApp::updateFromReliefHeight() {
 	if(!loading || adjust_frame != 0){ //allow manipulation if not loading or in adjust phase
 		for (int x = 0; x < RELIEF_SIZE_X; x++) {
 			for (int y = 0; y < RELIEF_SIZE_Y; y++) {
-				//disable server side manual manipulation
-                mPinHeightToRelief[x][y] += (mPinHeightFromRelief[x][y] - mPinHeightToRelief[x][y]) / DIRECT_MANIPULATION_DELAY;
+				//Adjust to allow direct manipulation
+                mPinHeightToRelief[x][y] += (mPinHeightFromRelief[x][y] - (unsigned char)mPinHeightToRelief[x][y]) / DIRECT_MANIPULATION_DELAY;
 			}
 		}
 	}
@@ -134,6 +141,7 @@ void gesturalReliefApp::updateFromReliefHeight() {
 //--------------------------------------------------------------
 void gesturalReliefApp::keyPressed(int key) {
 	switch (key) {
+        //resets the pins to the floor
         case 'r':
             for(int x = 0; x < RELIEF_SIZE_X; x++) {
                 for(int y = 0; y < RELIEF_SIZE_Y;y++) {
@@ -167,12 +175,9 @@ vector<vector<unsigned char> > gesturalReliefApp::reliefatov(unsigned char arr[R
 }
 
 void gesturalReliefApp::processLoading() {
-	//loading constants	
-	int max_speed = 2;
-	//int min_speed = 4;
-	int diff_threshold = 13;
-	int max_frames = FPS*2; // maximum loading frames incase of a pin-misfire
-	int adjust_duration = FPS*0.5;
+	int diff_threshold = 13; //The threshold for considering a pin loaded
+	int max_frames = (100/loadSpeed)+FPS; //The maximum number of loading frames, incase some pins are un-loadable
+	int adjust_duration = FPS*0.5; //Duration for the direct manipulation 
 	
 	if(adjust_frame == 0) {
 		frames_loading++;
@@ -187,15 +192,13 @@ void gesturalReliefApp::processLoading() {
 						continue_loading_flag = 1;
 					}
 					if (fdiff > 0) {
-						mPinHeightToRelief[x][y] += min(max_speed,tdiff);
+						mPinHeightToRelief[x][y] += min(loadSpeed,(float)tdiff);
 					} else if(fdiff < 0){
-						mPinHeightToRelief[x][y] += max(-max_speed,tdiff);
-					}
-					
+						mPinHeightToRelief[x][y] += max(-loadSpeed,(float)tdiff);
+					}					
 				}
 			}
-		}
-		
+		}		
 		
 		if(!continue_loading_flag || frames_loading > max_frames) { //conditions for loading finished
 			adjust_frame = 1;			
@@ -216,46 +219,46 @@ void gesturalReliefApp::startLoading() {
 	adjust_frame = 0;
 }
 
-//ManyMouse
-
+//Adds new clients
 void gesturalReliefApp::addClient(string ip, int port) {
-    bool add = true;
-    for(int i = 0; i < clients.size(); i++) {
-        if(ip == clients[i]->ip) {
-            add = false;
-        }
-    }
-    if(add) {
         clients.push_back(new Client(ip,port));
         //Send reply message
         ofxOscMessage m;
         m.setAddress("/relief/connect/reply");
-        //m.addIntArg(next_client_in_port);
         int inst = clients.size() -1;
-		clients[inst]->sender.sendMessage(m);
-        
-        printf("Add Client: Sending-%s, %d\n",ip.c_str(),port);
-    }
+		clients[inst]->sender.sendMessage(m);        
+        updateClientsFromHeight(); //Send all clients a height update
+        printf("Add Client: %s:%d\n",ip.c_str(),port);
 }
 
+//Process received messages
 void gesturalReliefApp::processMessages() {
     while(receiver.hasWaitingMessages()){
         ofxOscMessage m;
         receiver.getNextMessage(&m);
-        if(m.getAddress() == "/relief/connect"){
-            string ip = m.getRemoteIp();
-            int port = m.getArgAsInt32(0);
-            addClient(ip, port);
-            updateClientsFromHeight();
-        }
+        cout << "message received: " << m.getAddress() << " from " << m.getRemoteIp() << "\n";
+        
+        //Connect new clients from the heartbeat message
         if(m.getAddress() == "/relief/heartbeat") {
-            if (m.getNumArgs() == 1) {
-                string ip = m.getRemoteIp();
-                int port = m.getArgAsInt32(0);
+            string ip = m.getRemoteIp();
+            bool add = true;
+            for(int i = 0; i < clients.size(); i++) {
+                if(ip == clients[i]->ip) {
+                    add = false;
+                }
+            }
+            if(add) {
+                int port = LISTEN_PORT;
+                if (m.getNumArgs() == 1) {
+                    port = m.getArgAsInt32(0);
+                } else {
+                    cout << "Using default port for client." << endl;
+                }
                 addClient(ip, port);
-                updateClientsFromHeight();
             }
         }
+        
+        //Sets the relief immediately
         if(m.getAddress() == "/relief/set") {
             if(m.getNumArgs() != RELIEF_SIZE_X*RELIEF_SIZE_Y) {
                 printf("Incorrect number of arguments for /relief/set\n");
@@ -270,6 +273,8 @@ void gesturalReliefApp::processMessages() {
                 startLoading();
             }
         }
+        
+        //Sets one pin immediately
         if(m.getAddress() == "/relief/set/pin"){           
             int pinx = m.getArgAsInt32(0);
             int piny = m.getArgAsInt32(1);
@@ -277,7 +282,9 @@ void gesturalReliefApp::processMessages() {
             loadTarget[pinx][piny] = ofMap(pinheight,0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
             mPinHeightToRelief[pinx][piny] = ofMap(pinheight,0,100,RELIEF_FLOOR,RELIEF_CEIL,1);
             startLoading();
-        }        
+        }
+        
+        //Loads an entire relief at a set speed
         if(m.getAddress() == "/relief/load") {
             if(m.getNumArgs() != RELIEF_SIZE_X*RELIEF_SIZE_Y) {
                 printf("Incorrect number of arguments for /relief/set\n");
@@ -290,6 +297,8 @@ void gesturalReliefApp::processMessages() {
                 startLoading();
             }
         }
+        
+        //Removes the sender as a client
         if(m.getAddress() == "/relief/disconnect") {
             for(int i = 0; i < clients.size();i++) {
                 if(clients[i]->ip == m.getRemoteIp()) {
@@ -298,6 +307,13 @@ void gesturalReliefApp::processMessages() {
                 }
             }
         }
+        
+        //Sets the loading speed
+        if(m.getAddress() == "/relief/set/speed") {
+            loadSpeed = m.getArgAsFloat(0);
+        }
+        
+        //Updats the heartbeat timer
         for(int i = 0; i < clients.size(); i++) {
             if(clients[i]->ip == m.getRemoteIp()) {
                 clients[i]->lastPing = ofGetElapsedTimef();
@@ -307,6 +323,7 @@ void gesturalReliefApp::processMessages() {
 
 }
 
+//Checks for clients which haven't sent a heartbeat recently enough
 void gesturalReliefApp::checkDisconnects() {
     float time = ofGetElapsedTimef();
     for(int i = 0; i < clients.size(); i++) {
@@ -317,14 +334,14 @@ void gesturalReliefApp::checkDisconnects() {
     }
 }
 
-
+//Sends the from relief height to all clients
 void gesturalReliefApp::updateClientsFromHeight() {
     for(int i = 0; i < clients.size(); i++) {
         ofxOscMessage m;
         m.setAddress("/relief/update");
         for (int x = 0; x < RELIEF_SIZE_X; x++) { 
             for (int y = 0; y < RELIEF_SIZE_Y; y++) {
-                m.addIntArg(ofMap(mPinHeightFromRelief[x][y],RELIEF_FLOOR,RELIEF_CEIL,0,100,1));
+                m.addIntArg((unsigned char)ofMap(mPinHeightFromRelief[x][y],RELIEF_FLOOR,RELIEF_CEIL,0,100,1));
             }
         }
         clients[i]->sender.sendMessage(m);

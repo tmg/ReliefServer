@@ -36,7 +36,6 @@
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 400
 
-
 #define FPS 60
 #define	RELIEF_SIZE_X 12 
 #define	RELIEF_SIZE_Y 12

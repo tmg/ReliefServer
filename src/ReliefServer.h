@@ -3,7 +3,7 @@
 #include "ReliefIOManager.h"
 #include "constants.h"
 
-#define LISTEN_PORT 78746
+#define LISTEN_PORT 78746 //Port to listen for clients on
 
 class gesturalReliefApp : public ofBaseApp{
 
@@ -27,7 +27,7 @@ class gesturalReliefApp : public ofBaseApp{
 		// Relief
 		ReliefIOManager * mIOManager;
 		unsigned char mPinHeightFromRelief [RELIEF_SIZE_X][RELIEF_SIZE_Y];
-		unsigned char mPinHeightToRelief [RELIEF_SIZE_X][RELIEF_SIZE_Y];
+		float mPinHeightToRelief [RELIEF_SIZE_X][RELIEF_SIZE_Y];
 		unsigned char mPinMask[RELIEF_SIZE_X][RELIEF_SIZE_Y];
 
         float loadTarget[RELIEF_SIZE_X][RELIEF_SIZE_Y];
@@ -43,24 +43,11 @@ class gesturalReliefApp : public ofBaseApp{
 		int adjust_frame;
 		int frames_loading;   
         float startTime;
+        float loadSpeed;
 	
-		bool constantUpdate;
+		bool constantUpdate; //controls if the server constantly streams the relief state
     
-        //Networking
-        /*struct Client {
-            ofxOscSender   sender;
-            string         ip;
-            int            out_port;
-            float          lastPing;
-            
-            void setup(string out_ip, int outport) {
-                out_port = outport;
-                sender.setup(out_ip,out_port);
-                ip = out_ip;
-                lastPing = ofGetElapsedTimef();
-            }
-        };*/
-    
+        //Networking    
         struct Client {
             ofxOscSender   sender;
             string         ip;
