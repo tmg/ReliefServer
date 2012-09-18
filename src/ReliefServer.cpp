@@ -257,6 +257,16 @@ void gesturalReliefApp::processMessages() {
                 addClient(ip, port);
             }
         }
+
+        //Repeat broadcast messages to all other clients
+        string::size_type pos = m.getAddress().find("/relief/broadcast", 0);
+        if (pos == 0) {
+            for (int i = 0; i < clients.size(); i++) {
+                if (clients[i]->ip != m.getRemoteIp()) {
+                    clients[i]->sender.sendMessage(m);
+                }
+            }
+        }
         
         //Sets the relief immediately
         if(m.getAddress() == "/relief/set") {
